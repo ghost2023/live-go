@@ -24,9 +24,9 @@ var idCounter = 0
 
 var connections = []*Connection{}
 
-func Start(msgs chan string) {
+func Start(msgs chan string, port string) {
 
-	ln, err := net.Listen("tcp", ":6969")
+	ln, err := net.Listen("tcp", port)
 
 	if err != nil {
 		log.Fatal("erroring creating listener: ", err)

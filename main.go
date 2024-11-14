@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"net/http"
 	"os"
@@ -20,14 +21,12 @@ const injectedScript = `
 <script type="text/javascript">
   // <![CDATA[  <-- For SVG support
   if ("WebSocket" in window) {
-    (function () {
-      var address = "{{.protocol}}://" + window.location.hostname + ":{{.port }}";
-      var socket = new WebSocket(address);
-      socket.onmessage = function (msg) {
-        if (msg.data == "reload") window.location.reload();
-      };
-      console.log("Live reload enabled.");
-    })();
+    var address = "{{.protocol}}://" + window.location.hostname + ":{{.port }}";
+    var socket = new WebSocket(address);
+    socket.onmessage = function (msg) {
+      if (msg.data == "reload") window.location.reload();
+    };
+    console.log("Live reload enabled.");
   }
   // ]]>
 </script>
@@ -35,15 +34,43 @@ const injectedScript = `
 </html>
   `
 
+var wsPort = "6969"
+var port = "4200"
+var dir = "."
+
 func main() {
+	wsPortFlag := flag.String("ws", "6969", "WebSocket connection Port")
+	portFlag := flag.String("p", "4200", "Server Port")
+	flag.Parse()
+
+	wsPort = *wsPortFlag
+	port = *portFlag
+	restArgs := flag.Args()
+
+	if len(restArgs) > 0 {
+		dirName := restArgs[len(restArgs)-1]
+		_, err := os.ReadDir(dirName)
+		if err != nil {
+			if !os.IsExist(err) {
+				fmt.Printf("[x] Dir %s doesn't exist\n", dirName)
+			} else {
+				fmt.Printf("[x] Something went wrong reading dir %s\n", dirName)
+			}
+			os.Exit(1)
+		}
+
+		dir = dirName
+	}
+
 	filenames := make(chan string)
 	msgs := make(chan string)
-	go watchDir(".", filenames)
+	go watchDir(dir, filenames)
 
-	addFiles(".")
+	addFiles(dir)
+	fmt.Println("Watching for Changes")
 
-	go http.ListenAndServe(":9000", nil)
-	go socket.Start(msgs)
+	go http.ListenAndServe(":"+port, nil)
+	go socket.Start(msgs, ":"+wsPort)
 	for file := range filenames {
 		go func() {
 			msgs <- file
@@ -56,19 +83,23 @@ func addFiles(root string) {
 	http.HandleFunc(route, func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
 		sanitized := strings.TrimSuffix(path, "/")
+
 		if strings.HasSuffix(path, "/") {
 			sanitized = filepath.Join(sanitized, "index.html")
 		}
+
 		fileBuff, err := os.ReadFile(filepath.Join(root, sanitized))
 		if err != nil {
 			w.WriteHeader(500)
 		}
+
 		if strings.HasSuffix(path, ".html") {
 			val := InjectHtml(fileBuff, path)
 			w.Write([]byte(val))
 		} else {
 			w.Write(fileBuff)
 		}
+
 	})
 }
 
@@ -76,7 +107,7 @@ func InjectHtml(buf []byte, filename string) string {
 	fileStr := string(buf)
 	re := regexp.MustCompile(`(?i)(\s)*</\s*body\s*>\s*</\s*html\s*>\s*`)
 	m := map[string]string{
-		"port":     "6969",
+		"port":     wsPort,
 		"protocol": "http",
 		"filename": filename,
 	}
@@ -109,7 +140,6 @@ func watchDir(dir string, filename chan<- string) {
 
 	for _, e := range ls {
 		if e.IsDir() {
-			fmt.Println(filepath.Join(dir, e.Name()))
 			go watchDir(filepath.Join(dir, e.Name()), filename)
 		}
 	}
@@ -131,7 +161,7 @@ func watchDir(dir string, filename chan<- string) {
 			name += string(b)
 		}
 
-		fmt.Printf("raw %d %d %q %s\n", event.Len, len(name), name, dir)
+		fmt.Printf("%s\n", filepath.Join(dir, name))
 		filename <- "reload"
 	}
 }
