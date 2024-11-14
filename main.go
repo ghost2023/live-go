@@ -95,7 +95,7 @@ func addFiles(root string) {
 			w.WriteHeader(500)
 		}
 
-		if strings.HasSuffix(path, ".html") {
+		if strings.HasSuffix(sanitized, ".html") {
 			val := InjectHtml(fileBuff, path)
 			w.Write([]byte(val))
 		} else {
