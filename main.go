@@ -92,7 +92,12 @@ func addFiles(root string) {
 
 		fileBuff, err := os.ReadFile(filepath.Join(root, sanitized))
 		if err != nil {
-			w.WriteHeader(500)
+			w.WriteHeader(404)
+
+			fileBuff := []byte(`<!doctype html> <html lang="en"> <head> <meta charset="UTF-8" /> <meta name="viewport" content="width=device-width, initial-scale=1.0" /> <title>Not Founc</title> </head> <body><code>Not Found</code></body></html> `)
+
+			val := InjectHtml(fileBuff, path)
+			w.Write([]byte(val))
 		}
 
 		if strings.HasSuffix(sanitized, ".html") {
