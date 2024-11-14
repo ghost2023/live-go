@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"syscall"
 	"text/template"
@@ -37,6 +38,7 @@ const injectedScript = `
 var wsPort = "6969"
 var port = "4200"
 var dir = "."
+var ignoreDirs = []string{"node_modules", ".git", ".expo"}
 
 func main() {
 	wsPortFlag := flag.String("ws", "6969", "WebSocket connection Port")
@@ -121,6 +123,9 @@ func InjectHtml(buf []byte, filename string) string {
 }
 
 func watchDir(dir string, filename chan<- string) {
+	if slices.Contains(ignoreDirs, dir) {
+		return
+	}
 	fd, err := syscall.InotifyInit()
 	if err != nil {
 		log.Fatal(err)
