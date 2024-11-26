@@ -116,7 +116,7 @@ func HandleConnection(conn *Connection, msgs chan string) {
 		log.Fatal("erroring creating listener: ", err)
 	}
 	headers := make(map[string]string)
-	for true {
+	for {
 		headerLine, err := reader.ReadString('\n')
 		if err != nil {
 			log.Fatal("erroring creating listener: ", err)

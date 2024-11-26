@@ -11,6 +11,7 @@ import (
 	"strings"
 	"syscall"
 	"text/template"
+	"time"
 	"unsafe"
 
 	socket "go-live/src"
@@ -22,23 +23,40 @@ const injectedScript = `
 <script type="text/javascript">
   // <![CDATA[  <-- For SVG support
   if ("WebSocket" in window) {
+  ( function (){
+
     var address = "{{.protocol}}://" + window.location.hostname + ":{{.port }}";
     var socket = new WebSocket(address);
     socket.onmessage = function (msg) {
       if (msg.data == "reload") window.location.reload();
     };
     console.log("Live reload enabled.");
+  } )()
   }
   // ]]>
 </script>
     </body>
 </html>
+
   `
+const notFoundHTML = `<!doctype html> <html lang="en"> <head> <meta charset="UTF-8" /> <meta name="viewport" content="width=device-width, initial-scale=1.0" /> <title>Not Founc</title> </head> <body><code>Not Found</code></body></html> `
 
 var wsPort = "6969"
 var port = "4200"
 var dir = "."
 var ignoreDirs = []string{"node_modules", ".git", ".expo"}
+var watchList = []string{
+	".html",
+	".htm",
+	".xhtml",
+	".php",
+	".svg",
+	".css",
+	".sass",
+	".scss",
+	".json",
+	".json",
+}
 
 func main() {
 	wsPortFlag := flag.String("ws", "6969", "WebSocket connection Port")
@@ -66,17 +84,26 @@ func main() {
 
 	filenames := make(chan string)
 	msgs := make(chan string)
-	go watchDir(dir, filenames)
+
+	action := debounce(func() {
+		fmt.Println(time.Now().UnixMilli())
+		filenames <- "reload"
+	}, 100)
+
+	go watchDir(dir, action)
 
 	addFiles(dir)
 	fmt.Println("Watching for Changes")
 
 	go http.ListenAndServe(":"+port, nil)
 	go socket.Start(msgs, ":"+wsPort)
+	i := 0
 	for file := range filenames {
+		fmt.Println(i, file)
 		go func() {
-			msgs <- file
+			msgs <- fmt.Sprintf("%s %d", file, i)
 		}()
+		i++
 	}
 }
 
@@ -94,7 +121,7 @@ func addFiles(root string) {
 		if err != nil {
 			w.WriteHeader(404)
 
-			fileBuff := []byte(`<!doctype html> <html lang="en"> <head> <meta charset="UTF-8" /> <meta name="viewport" content="width=device-width, initial-scale=1.0" /> <title>Not Founc</title> </head> <body><code>Not Found</code></body></html> `)
+			fileBuff := []byte(notFoundHTML)
 
 			val := InjectHtml(fileBuff, path)
 			w.Write([]byte(val))
@@ -127,7 +154,7 @@ func InjectHtml(buf []byte, filename string) string {
 	return v
 }
 
-func watchDir(dir string, filename chan<- string) {
+func watchDir(dir string, action func()) {
 	if slices.Contains(ignoreDirs, dir) {
 		return
 	}
@@ -137,7 +164,13 @@ func watchDir(dir string, filename chan<- string) {
 	}
 	defer syscall.Close(fd)
 
-	wd, err := syscall.InotifyAddWatch(fd, dir, syscall.IN_MODIFY|syscall.IN_CREATE|syscall.IN_DELETE)
+	wd, err := syscall.InotifyAddWatch(fd, dir,
+		syscall.IN_MODIFY|
+			syscall.IN_CREATE|
+			syscall.IN_DELETE|
+			syscall.IN_CLOSE_WRITE|
+			syscall.IN_MOVED_TO|
+			syscall.IN_MOVE)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -150,7 +183,7 @@ func watchDir(dir string, filename chan<- string) {
 
 	for _, e := range ls {
 		if e.IsDir() {
-			go watchDir(filepath.Join(dir, e.Name()), filename)
+			go watchDir(filepath.Join(dir, e.Name()), action)
 		}
 	}
 
@@ -171,7 +204,31 @@ func watchDir(dir string, filename chan<- string) {
 			name += string(b)
 		}
 
+		watchable := false
+		for _, ext := range watchList {
+			if strings.HasSuffix(name, ext) {
+				watchable = true
+				break
+			}
+		}
+
+		if !watchable {
+			// continue
+		}
+
 		fmt.Printf("%s\n", filepath.Join(dir, name))
-		filename <- "reload"
+		action()
+	}
+}
+
+func debounce(f func(), delay time.Duration) func() {
+	var timer *time.Timer
+
+	return func() {
+		if timer != nil {
+			timer.Stop()
+		}
+
+		timer = time.AfterFunc(delay, f)
 	}
 }
