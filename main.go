@@ -14,7 +14,7 @@ import (
 	"time"
 	"unsafe"
 
-	socket "go-live/src"
+	socket "live-go/src"
 	"log"
 )
 
@@ -86,7 +86,6 @@ func main() {
 	msgs := make(chan string)
 
 	action := debounce(func() {
-		fmt.Println(time.Now().UnixMilli())
 		filenames <- "reload"
 	}, 100)
 

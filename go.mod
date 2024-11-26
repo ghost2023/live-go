@@ -1,3 +1,3 @@
-module go-live
+module live-go
 
 go 1.23.2
